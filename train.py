@@ -169,7 +169,8 @@ def main() -> None:
             print(
                 f"step {iter_num:05d} | train {losses['train']:.4f} | val {losses['val']:.4f} | lr {lr:.6f}"
             )
-            if losses["val"] < best_val_loss:
+            is_best = losses["val"] < best_val_loss
+            if is_best:
                 best_val_loss = losses["val"]
             checkpoint = {
                 "model": model.state_dict(),
@@ -179,7 +180,7 @@ def main() -> None:
                 "meta": meta,
             }
             torch.save(checkpoint, out_dir / "last.pt")
-            if losses["val"] <= best_val_loss:
+            if is_best:
                 torch.save(checkpoint, out_dir / "best.pt")
 
         optimizer.zero_grad(set_to_none=True)
