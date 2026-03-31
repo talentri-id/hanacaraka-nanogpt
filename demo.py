@@ -116,13 +116,22 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
     all_inputs = [prompt, max_tokens, temperature, top_k, top_p, min_p, repetition_penalty, xtc_threshold, xtc_probability]
     btn.click(fn=generate, inputs=all_inputs, outputs=[output, stats])
 
+    gr.Markdown("### Presets")
     gr.Examples(
         examples=[
             # prompt, max_tokens, temp, top_k, top_p, min_p, rep_pen, xtc_thresh, xtc_prob
-            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.2, 0.0, 0.0],  # Best balanced
-            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.5, 0.0, 0.0],  # Max diversity
-            ["\ua9b2", 128, 0.85, 50, 0.92, 0.0, 1.15, 0.0, 0.0],  # Combined
-            ["\ua9b2", 128, 0.8, 0, 1.0, 0.05, 1.2, 0.1, 0.3],  # XTC + min-p
+            ["\ua9b2", 128, 0.95, 80, 1.0, 0.0, 1.4, 0.0, 0.0],       # Creative
+            ["\ua9b2", 128, 0.7, 25, 1.0, 0.0, 1.2, 0.0, 0.0],        # Factual
+            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.2, 0.0, 0.0],        # Balanced
+            ["\ua9b2", 150, 0.9, 50, 1.0, 0.0, 1.3, 0.1, 0.5],        # Creative+XTC
+            ["\ua9b2", 128, 0.8, 0, 1.0, 0.05, 1.2, 0.1, 0.3],        # Min-p+XTC
+        ],
+        example_labels=[
+            "Creative (cerita)",
+            "Factual (fakta)",
+            "Balanced",
+            "Creative + XTC",
+            "Min-p + XTC",
         ],
         inputs=all_inputs,
     )
