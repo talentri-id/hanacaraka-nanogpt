@@ -178,6 +178,11 @@ class GPT(nn.Module):
         *,
         temperature: float = 1.0,
         top_k: int | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        repetition_penalty: float = 1.0,
+        xtc_threshold: float = 0.0,
+        xtc_probability: float = 0.0,
     ) -> torch.Tensor:
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size :]
@@ -185,12 +190,54 @@ class GPT(nn.Module):
             logits = logits[:, -1, :]
             if temperature <= 0:
                 raise ValueError("temperature must be > 0")
+
+            # Repetition penalty: penalize tokens already in the sequence
+            if repetition_penalty != 1.0:
+                for token_id in set(idx[0].tolist()):
+                    if logits[0, token_id] > 0:
+                        logits[0, token_id] /= repetition_penalty
+                    else:
+                        logits[0, token_id] *= repetition_penalty
+
             logits = logits / temperature
 
+            # Top-k filtering
             if top_k is not None:
-                top_k = min(top_k, logits.size(-1))
-                values, _ = torch.topk(logits, top_k)
+                k = min(top_k, logits.size(-1))
+                values, _ = torch.topk(logits, k)
                 logits[logits < values[:, [-1]]] = float("-inf")
+
+            # Top-p (nucleus) filtering
+            if top_p is not None and 0.0 < top_p < 1.0:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_mask = cumulative_probs - F.softmax(sorted_logits, dim=-1) >= top_p
+                sorted_logits[sorted_mask] = float("-inf")
+                logits = sorted_logits.scatter(1, sorted_indices, sorted_logits)
+
+            # Min-p filtering: discard tokens below min_p * max_prob
+            if min_p is not None and min_p > 0.0:
+                probs_temp = F.softmax(logits, dim=-1)
+                max_prob = probs_temp.max(dim=-1, keepdim=True).values
+                logits[probs_temp < min_p * max_prob] = float("-inf")
+
+            # XTC (Exclude Top Choices): randomly exclude top tokens for diversity
+            if xtc_threshold > 0.0 and xtc_probability > 0.0:
+                if torch.rand(1).item() < xtc_probability:
+                    probs_temp = F.softmax(logits, dim=-1)
+                    above_threshold = probs_temp > xtc_threshold
+                    num_above = above_threshold.sum().item()
+                    if num_above > 1:
+                        # Keep at least one token, exclude others above threshold
+                        top_idx = probs_temp.argmax(dim=-1)
+                        exclude_mask = above_threshold.clone()
+                        exclude_mask[0, top_idx] = False  # keep the very top
+                        # Randomly pick which ones to exclude
+                        exclude_candidates = exclude_mask[0].nonzero(as_tuple=True)[0]
+                        n_exclude = max(1, len(exclude_candidates) // 2)
+                        perm = torch.randperm(len(exclude_candidates))[:n_exclude]
+                        for ei in perm:
+                            logits[0, exclude_candidates[ei]] = float("-inf")
 
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)

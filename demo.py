@@ -25,7 +25,17 @@ print(f"Model loaded: {config.n_layer}L/{config.n_head}H/{config.n_embd}E, {mode
 print(f"Device: {DEVICE}")
 
 
-def generate(prompt: str, max_tokens: int, temperature: float, top_k: int) -> tuple[str, str]:
+def generate(
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    min_p: float,
+    repetition_penalty: float,
+    xtc_threshold: float,
+    xtc_probability: float,
+) -> tuple[str, str]:
     if not prompt.strip():
         prompt = "\ua9b2"  # ꦲ (ha)
 
@@ -40,13 +50,21 @@ def generate(prompt: str, max_tokens: int, temperature: float, top_k: int) -> tu
 
     idx = torch.tensor(ids, dtype=torch.long, device=DEVICE)[None, :]
 
+    gen_kwargs = {
+        "temperature": float(temperature),
+        "top_k": int(top_k) if top_k > 0 else None,
+        "repetition_penalty": float(repetition_penalty),
+    }
+    if top_p < 1.0:
+        gen_kwargs["top_p"] = float(top_p)
+    if min_p > 0.0:
+        gen_kwargs["min_p"] = float(min_p)
+    if xtc_threshold > 0.0 and xtc_probability > 0.0:
+        gen_kwargs["xtc_threshold"] = float(xtc_threshold)
+        gen_kwargs["xtc_probability"] = float(xtc_probability)
+
     with torch.no_grad():
-        out = model.generate(
-            idx,
-            max_new_tokens=int(max_tokens),
-            temperature=float(temperature),
-            top_k=int(top_k),
-        )
+        out = model.generate(idx, max_new_tokens=int(max_tokens), **gen_kwargs)
 
     text = tokenizer.decode_ids(out[0].tolist())
     metrics = compute_text_metrics(text).to_dict()
@@ -63,8 +81,7 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
     gr.Markdown(
         "Generate text in **Javanese script (Aksara Jawa)** using a "
         f"GPT model ({config.n_layer}L/{config.n_head}H/{config.n_embd}E, "
-        f"{model.get_num_params():,} params) trained on 176K sentences from "
-        "Leipzig Corpora, UD Javanese-CSUI, and Javanese Wikisource."
+        f"{model.get_num_params():,} params) trained from scratch on 176K sentences."
     )
 
     with gr.Row():
@@ -76,23 +93,38 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
                 lines=2,
             )
             max_tokens = gr.Slider(32, 512, value=128, step=16, label="Max tokens")
-            temperature = gr.Slider(0.1, 2.0, value=0.8, step=0.05, label="Temperature (0.7=safe, 0.8=balanced, 1.0=creative)")
-            top_k = gr.Slider(1, 200, value=40, step=1, label="Top-k (30=safe, 40=balanced, 80=creative)")
+
+            gr.Markdown("### Sampling")
+            temperature = gr.Slider(0.1, 2.0, value=0.8, step=0.05, label="Temperature")
+            top_k = gr.Slider(0, 200, value=40, step=1, label="Top-k (0=off)")
+            top_p = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Top-p / nucleus (1.0=off)")
+            min_p = gr.Slider(0.0, 0.5, value=0.0, step=0.01, label="Min-p (0=off)")
+
+            gr.Markdown("### Anti-repetition")
+            repetition_penalty = gr.Slider(1.0, 2.0, value=1.2, step=0.05, label="Repetition penalty (1.0=off, 1.2=recommended)")
+
+            gr.Markdown("### XTC (Exclude Top Choices)")
+            xtc_threshold = gr.Slider(0.0, 0.5, value=0.0, step=0.01, label="XTC threshold (0=off)")
+            xtc_probability = gr.Slider(0.0, 1.0, value=0.0, step=0.05, label="XTC probability (0=off)")
+
             btn = gr.Button("Generate", variant="primary")
 
         with gr.Column(scale=2):
-            output = gr.Textbox(label="Output", lines=12)
+            output = gr.Textbox(label="Output", lines=16)
             stats = gr.Textbox(label="Stats", lines=1)
 
-    btn.click(fn=generate, inputs=[prompt, max_tokens, temperature, top_k], outputs=[output, stats])
+    all_inputs = [prompt, max_tokens, temperature, top_k, top_p, min_p, repetition_penalty, xtc_threshold, xtc_probability]
+    btn.click(fn=generate, inputs=all_inputs, outputs=[output, stats])
 
     gr.Examples(
         examples=[
-            ["\ua9b2", 200, 0.85, 50],
-            ["\ua9b2\ua9a4\ua995\ua9ab\ua98f", 200, 0.85, 50],  # ꦲꦤꦕꦫꦏ
-            ["\ua9a5\ua9a2\ua997\ua9aa\ua99a", 200, 0.9, 40],   # ꦥꦢꦗꦪꦚ
+            # prompt, max_tokens, temp, top_k, top_p, min_p, rep_pen, xtc_thresh, xtc_prob
+            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.2, 0.0, 0.0],  # Best balanced
+            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.5, 0.0, 0.0],  # Max diversity
+            ["\ua9b2", 128, 0.85, 50, 0.92, 0.0, 1.15, 0.0, 0.0],  # Combined
+            ["\ua9b2", 128, 0.8, 0, 1.0, 0.05, 1.2, 0.1, 0.3],  # XTC + min-p
         ],
-        inputs=[prompt, max_tokens, temperature, top_k],
+        inputs=all_inputs,
     )
 
 if __name__ == "__main__":

@@ -26,8 +26,13 @@ def main() -> None:
     parser.add_argument("--tokenizer_json", type=Path, required=True)
     parser.add_argument("--prompt", type=str, default="ꦲ")
     parser.add_argument("--max_new_tokens", type=int, default=128)
-    parser.add_argument("--temperature", type=float, default=0.9)
-    parser.add_argument("--top_k", type=int, default=20)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top_k", type=int, default=40)
+    parser.add_argument("--top_p", type=float, default=None, help="Nucleus sampling threshold (e.g. 0.92)")
+    parser.add_argument("--min_p", type=float, default=None, help="Min-p filtering (e.g. 0.05)")
+    parser.add_argument("--repetition_penalty", type=float, default=1.2, help="Repetition penalty (1.0=off)")
+    parser.add_argument("--xtc_threshold", type=float, default=0.0, help="XTC threshold (0=off)")
+    parser.add_argument("--xtc_probability", type=float, default=0.0, help="XTC probability (0=off)")
     parser.add_argument("--num_samples", type=int, default=3)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--seed", type=int, default=1337)
@@ -59,11 +64,22 @@ def main() -> None:
 
     with torch.no_grad():
         for sample_i in range(args.num_samples):
+            gen_kwargs = {
+                "temperature": args.temperature,
+                "top_k": args.top_k,
+                "repetition_penalty": args.repetition_penalty,
+            }
+            if args.top_p is not None:
+                gen_kwargs["top_p"] = args.top_p
+            if args.min_p is not None:
+                gen_kwargs["min_p"] = args.min_p
+            if args.xtc_threshold > 0 and args.xtc_probability > 0:
+                gen_kwargs["xtc_threshold"] = args.xtc_threshold
+                gen_kwargs["xtc_probability"] = args.xtc_probability
             out = model.generate(
                 idx.clone(),
                 max_new_tokens=args.max_new_tokens,
-                temperature=args.temperature,
-                top_k=args.top_k,
+                **gen_kwargs,
             )
             text = tokenizer.decode_ids(out[0].tolist())
             metrics = compute_text_metrics(text).to_dict()
