@@ -11,8 +11,8 @@ from latin_to_javanese import LatinToJavaneseBuiltin
 
 latin_to_jav = LatinToJavaneseBuiltin()
 
-CHECKPOINT = "runs/full_v2/best.pt"
-TOKENIZER_JSON = "corpora/full/prepared/tokenizer.json"
+CHECKPOINT = "runs/full_v3_para/best.pt"
+TOKENIZER_JSON = "corpora/full/prepared_para/tokenizer.json"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load model
