@@ -141,18 +141,18 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
     gr.Examples(
         examples=[
             # prompt, max_tokens, temp, top_k, top_p, min_p, rep_pen, xtc_thresh, xtc_prob
-            ["\ua9b2", 128, 0.95, 80, 1.0, 0.0, 1.4, 0.0, 0.0],       # Creative
-            ["\ua9b2", 128, 0.7, 25, 1.0, 0.0, 1.2, 0.0, 0.0],        # Factual
-            ["\ua9b2", 128, 0.8, 40, 1.0, 0.0, 1.2, 0.0, 0.0],        # Balanced
-            ["\ua9b2", 150, 0.9, 50, 1.0, 0.0, 1.3, 0.1, 0.5],        # Creative+XTC
-            ["\ua9b2", 128, 0.8, 0, 1.0, 0.05, 1.2, 0.1, 0.3],        # Min-p+XTC
+            ["\ua9b2", 150, 0.95, 80, 1.0, 0.0, 1.4, 0.0, 0.0],       # Creative
+            ["\ua9b2", 128, 0.65, 25, 1.0, 0.0, 1.2, 0.0, 0.0],       # Factual
+            ["\ua9b2", 128, 0.8, 50, 1.0, 0.0, 1.15, 0.0, 0.0],       # Balanced
+            ["\ua9b2", 150, 0.9, 60, 1.0, 0.0, 1.3, 0.0, 0.0],        # Creative mild
+            ["\ua9b2", 128, 0.9, 0, 1.0, 0.02, 1.3, 0.0, 0.0],        # Min-p combo
         ],
         example_labels=[
-            "Creative (cerita)",
-            "Factual (fakta)",
-            "Balanced",
-            "Creative + XTC",
-            "Min-p + XTC",
+            "Creative (q=0.76)",
+            "Factual (q=0.65)",
+            "Balanced (q=0.69)",
+            "Creative mild (q=0.71)",
+            "Min-p combo (q=0.70)",
         ],
         inputs=all_inputs,
     )
