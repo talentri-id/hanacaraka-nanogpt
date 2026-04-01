@@ -6,6 +6,10 @@ import gradio as gr
 
 from model import GPT, GPTConfig
 from tokenizer_jawa import BaseTokenizer, compute_text_metrics
+from javanese_to_latin import transliterate_to_latin
+from latin_to_javanese import LatinToJavaneseBuiltin
+
+latin_to_jav = LatinToJavaneseBuiltin()
 
 CHECKPOINT = "runs/full_v2/best.pt"
 TOKENIZER_JSON = "corpora/full/prepared/tokenizer.json"
@@ -67,13 +71,14 @@ def generate(
         out = model.generate(idx, max_new_tokens=int(max_tokens), **gen_kwargs)
 
     text = tokenizer.decode_ids(out[0].tolist())
+    latin = transliterate_to_latin(text)
     metrics = compute_text_metrics(text).to_dict()
     stats = (
         f"Tokens: {metrics['total_tokens']} | "
         f"Syllables: {metrics['syllable_like_tokens']} | "
         f"Invalid: {metrics['invalid_tokens']} ({metrics['invalid_token_rate']:.4f})"
     )
-    return text, stats
+    return text, latin, stats
 
 
 with gr.Blocks(title="Hanacaraka nanoGPT") as app:
@@ -84,12 +89,25 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
         f"{model.get_num_params():,} params) trained from scratch on 176K sentences."
     )
 
+    def convert_latin(text: str) -> str:
+        """Convert Latin text to Hanacaraka."""
+        if not text.strip():
+            return ""
+        return latin_to_jav.transliterate_text(text.strip())
+
     with gr.Row():
         with gr.Column(scale=1):
+            gr.Markdown("### Input")
+            latin_input = gr.Textbox(
+                label="Type in Latin (auto-converts to Hanacaraka)",
+                placeholder="e.g. basa jawa, candi, ing taun...",
+                lines=1,
+            )
+            convert_btn = gr.Button("Convert to Hanacaraka", size="sm")
             prompt = gr.Textbox(
                 label="Prompt (Hanacaraka)",
                 value="\ua9b2",
-                placeholder="Enter Javanese script...",
+                placeholder="Enter Javanese script or use Latin converter above...",
                 lines=2,
             )
             max_tokens = gr.Slider(32, 512, value=128, step=16, label="Max tokens")
@@ -110,11 +128,14 @@ with gr.Blocks(title="Hanacaraka nanoGPT") as app:
             btn = gr.Button("Generate", variant="primary")
 
         with gr.Column(scale=2):
-            output = gr.Textbox(label="Output", lines=16)
+            output = gr.Textbox(label="Output (Hanacaraka)", lines=10)
+            latin_output = gr.Textbox(label="Transliteration (Latin)", lines=6)
             stats = gr.Textbox(label="Stats", lines=1)
 
+    convert_btn.click(fn=convert_latin, inputs=[latin_input], outputs=[prompt])
+
     all_inputs = [prompt, max_tokens, temperature, top_k, top_p, min_p, repetition_penalty, xtc_threshold, xtc_probability]
-    btn.click(fn=generate, inputs=all_inputs, outputs=[output, stats])
+    btn.click(fn=generate, inputs=all_inputs, outputs=[output, latin_output, stats])
 
     gr.Markdown("### Presets")
     gr.Examples(
