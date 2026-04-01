@@ -10,3 +10,5 @@ corpora/
 *.bin
 *.bundle
 *.zip
+*.onnx
+*.onnx.data

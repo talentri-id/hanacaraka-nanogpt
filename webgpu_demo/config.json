@@ -1,0 +1,8 @@
+{
+  "n_layer": 8,
+  "n_head": 8,
+  "n_embd": 512,
+  "block_size": 256,
+  "vocab_size": 8678,
+  "params": 29794304
+}

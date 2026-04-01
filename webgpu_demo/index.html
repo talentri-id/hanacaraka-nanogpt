@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hanacaraka nanoGPT - WebGPU Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    min-height: 100vh; padding: 20px;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: 4px; color: #f8fafc; }
+  .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.9rem; }
+  .status-bar {
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 20px; font-size: 0.85rem;
+  }
+  .status-bar .label { color: #64748b; }
+  .status-bar .value { color: #38bdf8; font-weight: 600; }
+  .status-bar .error { color: #f87171; }
+  .status-bar .ok { color: #4ade80; }
+  .card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  label { display: block; color: #94a3b8; font-size: 0.8rem; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  textarea, input[type="text"] {
+    width: 100%; background: #0f172a; border: 1px solid #475569;
+    border-radius: 8px; padding: 12px; color: #f1f5f9;
+    font-size: 1.1rem; resize: vertical; font-family: 'Noto Sans Javanese', serif;
+  }
+  textarea:focus, input:focus { outline: none; border-color: #38bdf8; }
+  .output-area {
+    min-height: 120px; font-size: 1.2rem; line-height: 1.8;
+    font-family: 'Noto Sans Javanese', serif; white-space: pre-wrap;
+  }
+  .latin-output {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.95rem; color: #94a3b8; line-height: 1.6;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;
+    white-space: pre-wrap;
+  }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .control-group label { margin-bottom: 4px; }
+  .control-group input[type="range"] { width: 100%; accent-color: #38bdf8; }
+  .control-group .val { float: right; color: #38bdf8; font-size: 0.85rem; }
+  button {
+    background: #2563eb; color: white; border: none; border-radius: 8px;
+    padding: 12px 24px; font-size: 1rem; cursor: pointer; font-weight: 600;
+    transition: background 0.2s;
+  }
+  button:hover { background: #3b82f6; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  .btn-secondary {
+    background: #334155; color: #e2e8f0;
+  }
+  .btn-secondary:hover { background: #475569; }
+  .progress { color: #fbbf24; font-size: 0.85rem; margin-top: 8px; }
+  .badge {
+    display: inline-block; background: #1e40af; color: #93c5fd;
+    padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 8px;
+  }
+  .presets { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .preset-btn {
+    background: #334155; color: #cbd5e1; border: 1px solid #475569;
+    border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; cursor: pointer;
+  }
+  .preset-btn:hover { background: #475569; border-color: #64748b; }
+  .preset-btn.active { background: #1e40af; border-color: #3b82f6; color: #93c5fd; }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Javanese&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="container">
+  <h1>Hanacaraka nanoGPT <span class="badge">WebGPU</span></h1>
+  <p class="subtitle">30M parameter GPT model running entirely in your browser via ONNX Runtime WebGPU</p>
+
+  <div class="status-bar" id="statusBar">
+    <span class="label">Status: </span><span id="statusText" class="value">Initializing...</span>
+  </div>
+
+  <div class="card">
+    <label>Prompt (Hanacaraka)</label>
+    <input type="text" id="prompt" value="&#xa9b2;" style="font-size:1.3rem; margin-bottom:8px;">
+    <label>Or type in Latin</label>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="latinInput" placeholder="e.g. basa jawa" style="font-size:0.95rem; font-family: system-ui;">
+      <button class="btn-secondary" onclick="convertLatin()" style="white-space:nowrap;padding:8px 12px;font-size:0.85rem;">Convert</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Presets</label>
+    <div class="presets">
+      <button class="preset-btn" onclick="applyPreset('creative')">Creative</button>
+      <button class="preset-btn active" onclick="applyPreset('balanced')">Balanced</button>
+      <button class="preset-btn" onclick="applyPreset('factual')">Factual</button>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>Temperature <span class="val" id="tempVal">0.8</span></label>
+        <input type="range" id="temperature" min="0.1" max="2.0" step="0.05" value="0.8"
+               oninput="document.getElementById('tempVal').textContent=this.value">
+      </div>
+      <div class="control-group">
+        <label>Top-k <span class="val" id="topkVal">40</span></label>
+        <input type="range" id="topk" min="1" max="200" step="1" value="40"
+               oninput="document.getElementById('topkVal').textContent=this.value">
+      </div>
+      <div class="control-group">
+        <label>Rep Penalty <span class="val" id="repVal">1.2</span></label>
+        <input type="range" id="repPenalty" min="1.0" max="2.0" step="0.05" value="1.2"
+               oninput="document.getElementById('repVal').textContent=this.value">
+      </div>
+      <div class="control-group">
+        <label>Max Tokens <span class="val" id="maxVal">128</span></label>
+        <input type="range" id="maxTokens" min="16" max="256" step="8" value="128"
+               oninput="document.getElementById('maxVal').textContent=this.value">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button id="generateBtn" onclick="generate()" disabled>Generate</button>
+      <button class="btn-secondary" id="stopBtn" onclick="stopGeneration()" disabled>Stop</button>
+    </div>
+    <div class="progress" id="progress"></div>
+  </div>
+
+  <div class="card">
+    <label>Output</label>
+    <div class="output-area" id="output">Model loading...</div>
+    <div class="latin-output" id="latinOutput"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js"></script>
+<script>
+// Transliteration maps
+const CONSONANT_MAP = {
+  '\uA98F':'ka','\uA990':'qa','\uA991':'ki','\uA992':'ga','\uA993':'gha',
+  '\uA994':'nga','\uA995':'ca','\uA996':'cha','\uA997':'ja','\uA998':'jha',
+  '\uA999':'jnya','\uA99A':'nya','\uA99B':'tta','\uA99C':'ttha','\uA99D':'dda',
+  '\uA99E':'ddha','\uA99F':'nna','\uA9A0':'ta','\uA9A1':'tha','\uA9A2':'da',
+  '\uA9A3':'dha','\uA9A4':'na','\uA9A5':'pa','\uA9A6':'pha','\uA9A7':'ba',
+  '\uA9A8':'bha','\uA9A9':'ma','\uA9AA':'ya','\uA9AB':'ra','\uA9AC':'rra',
+  '\uA9AD':'la','\uA9AE':'wa','\uA9AF':'sha','\uA9B0':'ssa','\uA9B1':'sa','\uA9B2':'ha'
+};
+const INDEP_VOWEL = {
+  '\uA984':'a','\uA985':'aa','\uA986':'i','\uA987':'ii','\uA988':'u',
+  '\uA989':'uu','\uA98A':'rre','\uA98B':'rro','\uA98C':'e','\uA98D':'ai','\uA98E':'o'
+};
+const VOWEL_SIGN = {
+  '\uA9B4':'aa','\uA9B5':'aa','\uA9B6':'i','\uA9B7':'ii','\uA9B8':'u',
+  '\uA9B9':'uu','\uA9BA':'e','\uA9BB':'ai','\uA9BC':'e'
+};
+const FINAL_SIGN = {'\uA981':'ng','\uA982':'r','\uA983':'h'};
+const DIGIT_MAP = {};
+for(let i=0;i<10;i++) DIGIT_MAP[String.fromCodePoint(0xA9D0+i)]=String(i);
+
+function isConsonant(c){return c>='\uA98F'&&c<='\uA9B2';}
+function isVowelSign(c){return c>='\uA9B4'&&c<='\uA9BC';}
+function isIndepVowel(c){return c>='\uA984'&&c<='\uA98E';}
+function isFinalSign(c){return c in FINAL_SIGN;}
+function isDigit(c){return c>='\uA9D0'&&c<='\uA9D9';}
+
+function toLatin(text){
+  const r=[];let i=0;const ch=[...text],n=ch.length;
+  while(i<n){
+    const c=ch[i];
+    if(c===' '||c==='\n'||c==='\t'){r.push(c);i++;continue;}
+    if(isDigit(c)){r.push(DIGIT_MAP[c]);i++;continue;}
+    if(isIndepVowel(c)){let v=INDEP_VOWEL[c]||c;i++;
+      while(i<n&&isVowelSign(ch[i])){v+=VOWEL_SIGN[ch[i]];i++;}
+      while(i<n&&isFinalSign(ch[i])){v+=FINAL_SIGN[ch[i]];i++;}
+      r.push(v);continue;}
+    if(isConsonant(c)){
+      let base=CONSONANT_MAP[c]||c;
+      let cp=base.endsWith('a')&&base.length>1?base.slice(0,-1):base;
+      i++;
+      if(i<n&&ch[i]==='\uA9B3'){
+        if(c==='\uA9A5')cp='f';else if(c==='\uA997')cp='z';
+        else if(c==='\uA9A7')cp='v';i++;}
+      if(i<n&&ch[i]==='\uA9C0'){i++;r.push(cp);continue;}
+      let vowel='a';
+      if(i<n&&isVowelSign(ch[i])){
+        if(ch[i]==='\uA9BA'&&i+1<n&&ch[i+1]==='\uA9B4'){vowel='o';i+=2;}
+        else{vowel=VOWEL_SIGN[ch[i]]||'a';i++;}}
+      r.push(cp+vowel);
+      while(i<n&&isFinalSign(ch[i])){r.push(FINAL_SIGN[ch[i]]);i++;}
+      continue;}
+    if(isFinalSign(c)){r.push(FINAL_SIGN[c]);i++;continue;}
+    if(c==='\uA9C0'||c==='\uA9B3'){i++;continue;}
+    if(isVowelSign(c)){r.push(VOWEL_SIGN[c]||'');i++;continue;}
+    r.push(c);i++;
+  }
+  return r.join('');
+}
+
+// App state
+let session = null;
+let tokenizer = null;
+let shouldStop = false;
+
+const PRESETS = {
+  creative:  {temperature:0.95, topk:80, repPenalty:1.4, maxTokens:150},
+  balanced:  {temperature:0.8,  topk:40, repPenalty:1.2, maxTokens:128},
+  factual:   {temperature:0.7,  topk:25, repPenalty:1.2, maxTokens:128},
+};
+
+function applyPreset(name){
+  const p=PRESETS[name];
+  document.getElementById('temperature').value=p.temperature;
+  document.getElementById('tempVal').textContent=p.temperature;
+  document.getElementById('topk').value=p.topk;
+  document.getElementById('topkVal').textContent=p.topk;
+  document.getElementById('repPenalty').value=p.repPenalty;
+  document.getElementById('repVal').textContent=p.repPenalty;
+  document.getElementById('maxTokens').value=p.maxTokens;
+  document.getElementById('maxVal').textContent=p.maxTokens;
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function convertLatin(){
+  // Simple Latin to Javanese (basic mapping - not full transliterator)
+  const latin = document.getElementById('latinInput').value.trim();
+  if(!latin) return;
+  // We'll just set a placeholder since full transliteration is complex in JS
+  // The actual model accepts Javanese script tokens
+  setStatus('Latin conversion requires server-side transliterator. Use Hanacaraka directly.', 'error');
+}
+
+function setStatus(msg, type='value'){
+  const el = document.getElementById('statusText');
+  el.textContent = msg;
+  el.className = type;
+}
+
+async function loadModel(){
+  try {
+    setStatus('Loading tokenizer...');
+    const tokResp = await fetch('tokenizer.json');
+    tokenizer = await tokResp.json();
+    setStatus(`Tokenizer loaded (${Object.keys(tokenizer.token2id).length} tokens). Loading model...`);
+
+    // Try WebGPU first, fallback to WASM
+    let backend = 'webgpu';
+    try {
+      if (!navigator.gpu) throw new Error('No WebGPU');
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) throw new Error('No adapter');
+    } catch(e) {
+      backend = 'wasm';
+      setStatus('WebGPU not available, using WASM fallback...');
+    }
+
+    const opts = {executionProviders: [backend === 'webgpu' ? 'webgpu' : 'wasm']};
+    session = await ort.InferenceSession.create('model_fp16.onnx', opts);
+
+    const backendLabel = backend === 'webgpu' ? 'WebGPU' : 'WASM (CPU)';
+    setStatus(`Ready! Backend: ${backendLabel} | Model: 30M params`, 'ok');
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('output').textContent = 'Click Generate to start.';
+  } catch(e) {
+    setStatus(`Error: ${e.message}`, 'error');
+    console.error(e);
+  }
+}
+
+function segmentJavanese(text) {
+  // Simple segmenter: split by whitespace, each piece is a token
+  const pieces = [];
+  let current = '';
+  for (const ch of text) {
+    if (ch === ' ' || ch === '\n' || ch === '\t') {
+      if (current) { pieces.push(current); current = ''; }
+      pieces.push(ch);
+    } else {
+      current += ch;
+    }
+  }
+  if (current) pieces.push(current);
+  return pieces;
+}
+
+function encode(text) {
+  const tokens = segmentJavanese(text);
+  const ids = [];
+  for (const tok of tokens) {
+    const id = tokenizer.token2id[tok];
+    if (id !== undefined) ids.push(id);
+  }
+  return ids;
+}
+
+function decode(ids) {
+  return ids.map(id => tokenizer.id2token[String(id)] || '').join('');
+}
+
+function sampleTopK(logitsData, temperature, topK, repPenalty, generatedIds) {
+  const logits = new Float32Array(logitsData);
+
+  // Apply repetition penalty
+  if (repPenalty !== 1.0) {
+    const seen = new Set(generatedIds);
+    for (const id of seen) {
+      if (logits[id] > 0) logits[id] /= repPenalty;
+      else logits[id] *= repPenalty;
+    }
+  }
+
+  // Temperature
+  for (let i = 0; i < logits.length; i++) logits[i] /= temperature;
+
+  // Top-k: find k-th largest value
+  const sorted = [...logits].sort((a,b) => b-a);
+  const threshold = sorted[Math.min(topK-1, sorted.length-1)];
+  for (let i = 0; i < logits.length; i++) {
+    if (logits[i] < threshold) logits[i] = -Infinity;
+  }
+
+  // Softmax
+  let maxVal = -Infinity;
+  for (let i = 0; i < logits.length; i++) if (logits[i] > maxVal) maxVal = logits[i];
+  let sum = 0;
+  for (let i = 0; i < logits.length; i++) {
+    logits[i] = Math.exp(logits[i] - maxVal);
+    sum += logits[i];
+  }
+  for (let i = 0; i < logits.length; i++) logits[i] /= sum;
+
+  // Sample
+  let r = Math.random();
+  for (let i = 0; i < logits.length; i++) {
+    r -= logits[i];
+    if (r <= 0) return i;
+  }
+  return logits.length - 1;
+}
+
+async function generate() {
+  if (!session || !tokenizer) return;
+
+  shouldStop = false;
+  const genBtn = document.getElementById('generateBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  genBtn.disabled = true;
+  stopBtn.disabled = false;
+
+  const promptText = document.getElementById('prompt').value || '\uA9B2';
+  const temperature = parseFloat(document.getElementById('temperature').value);
+  const topK = parseInt(document.getElementById('topk').value);
+  const repPenalty = parseFloat(document.getElementById('repPenalty').value);
+  const maxTokens = parseInt(document.getElementById('maxTokens').value);
+
+  let ids = encode(promptText);
+  if (ids.length === 0) {
+    setStatus('Prompt produced no tokens. Use Javanese script.', 'error');
+    genBtn.disabled = false;
+    stopBtn.disabled = true;
+    return;
+  }
+
+  const blockSize = tokenizer.block_size || 256;
+  const outputEl = document.getElementById('output');
+  const latinEl = document.getElementById('latinOutput');
+  const progressEl = document.getElementById('progress');
+
+  outputEl.textContent = decode(ids);
+  latinEl.textContent = '';
+  setStatus('Generating...', 'value');
+
+  const startTime = performance.now();
+
+  for (let step = 0; step < maxTokens; step++) {
+    if (shouldStop) break;
+
+    // Truncate to block_size
+    const inputIds = ids.length > blockSize ? ids.slice(-blockSize) : ids;
+    const inputTensor = new ort.Tensor('int64', BigInt64Array.from(inputIds.map(BigInt)), [1, inputIds.length]);
+
+    const results = await session.run({input_ids: inputTensor});
+    const logitsData = results.logits.data;
+
+    const nextId = sampleTopK(logitsData, temperature, topK, repPenalty, ids);
+    ids.push(nextId);
+
+    // Update display
+    const text = decode(ids);
+    outputEl.textContent = text;
+    latinEl.textContent = toLatin(text);
+
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+    const tps = ((step + 1) / parseFloat(elapsed) || 0).toFixed(1);
+    progressEl.textContent = `${step+1}/${maxTokens} tokens | ${elapsed}s | ${tps} tok/s`;
+
+    // Yield to UI
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  const totalTime = ((performance.now() - startTime) / 1000).toFixed(1);
+  const totalTps = (ids.length / parseFloat(totalTime)).toFixed(1);
+  setStatus(`Done! ${ids.length} tokens in ${totalTime}s (${totalTps} tok/s)`, 'ok');
+  genBtn.disabled = false;
+  stopBtn.disabled = true;
+  progressEl.textContent = '';
+}
+
+function stopGeneration() {
+  shouldStop = true;
+  document.getElementById('stopBtn').disabled = true;
+}
+
+// Boot
+loadModel();
+</script>
+</body>
+</html>
